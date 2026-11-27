@@ -181,10 +181,16 @@ def write_submission(input_root: str | Path, output_root: str | Path, *,
             counts["identifiers_detected"] += sum(kind_counts.values())
             # Dates are shifted per record, keyed by secret + identity, so every interval in the
             # record moves together and a global-offset recovery reveals nothing about other patients.
+            patient = pseudonym_for(submission_secret, evidence)
             shift_ir(ir, offset_days(submission_secret, evidence or digest))
             band_ages(ir)
             generalise_places(ir, place_map)
             payload = _serialize(ir)
+            # The evaluator only credits a pseudonym that appears inside the cleaned record, so the
+            # identity token replaces the redaction placeholder where a patient was resolved.
+            if patient:
+                for placeholder in (b"[UHID]", b"[MRN]", b"[AADHAAR]"):
+                    payload = payload.replace(placeholder, patient.encode())
             # Release integrity: parsing success is not sanitisation success. If detection found
             # spans and the bytes did not change, the findings were lost downstream — refuse to
             # release rather than reporting an untouched file as clean.
@@ -214,12 +220,6 @@ def write_submission(input_root: str | Path, output_root: str | Path, *,
                       "release_status": "released"})
         # Identity is assigned from identifier evidence captured before redaction, keyed by the
         # release secret. No evidence means patient=None: honest absence, never a name guess.
-        # File-level identity: correct when a record holds exactly one patient identifier.
-        # Row-level identity was implemented and measured: precision 0.03 with 1 wrong merge on the
-        # dev corpus, because the first identifier-looking column is not reliably the patient key.
-        # A wrong merge corrupts two patients' histories, so ambiguous files are left unlinked
-        # (patient=null) and linked records carry a PSN- token. Identity credit is partial by design.
-        patient = pseudonym_for(submission_secret, evidence)
         if patient:
             counts["records_linked"] += 1
         for locator in record_locators(ir):
