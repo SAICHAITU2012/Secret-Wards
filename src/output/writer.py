@@ -23,6 +23,7 @@ from src.detection.structural import sanitise_structure
 from src.detection.protection import ProtectionIndex
 from src.ingestion.scanned import scan_path
 from src.policy import engine as policy_engine
+from src.privacy.quasi import offset_days, shift_ir
 from src.privacy.pseudonyms import (identity_evidence, pseudonym_for,
                                     pseudonym_for_locator, secret_from_environment)
 from src.security.capabilities import report_section
@@ -176,6 +177,9 @@ def write_submission(input_root: str | Path, output_root: str | Path, *,
             counts["identifiers_detected"] += sum(structural_counts.values())
             kind_counts = policy_engine.evaluate(ir, protection, policy)
             counts["identifiers_detected"] += sum(kind_counts.values())
+            # Dates are shifted per record, keyed by secret + identity, so every interval in the
+            # record moves together and a global-offset recovery reveals nothing about other patients.
+            shift_ir(ir, offset_days(submission_secret, evidence or digest))
             payload = _serialize(ir)
             # Release integrity: parsing success is not sanitisation success. If detection found
             # spans and the bytes did not change, the findings were lost downstream — refuse to

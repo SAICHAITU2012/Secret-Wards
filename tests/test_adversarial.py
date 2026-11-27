@@ -56,10 +56,10 @@ def test_symlink_write_is_refused(tmp_path):
 
 # ── leak scan covers every channel ──────────────────────────────────────────
 def test_leak_scan_finds_content_and_filename(tmp_path):
-    write(tmp_path / "out", "a.txt", b"patient [CANARY-REDACTED] seen")
+    write(tmp_path / "out", "a.txt", b"patient Kaveri Nambiar seen")
     write(tmp_path / "out", "Kaveri_Nambiar_note.txt", b"clean")
-    hits = leak_scan(tmp_path / "out", ["[CANARY-REDACTED]"])
-    assert any(h[1] == "[CANARY-REDACTED]" for h in hits)
+    hits = leak_scan(tmp_path / "out", ["Kaveri Nambiar"])
+    assert any(h[1] == "Kaveri Nambiar" for h in hits)
     assert any(h[1].startswith("filename:") for h in hits)
 
 
@@ -92,7 +92,7 @@ def test_duplicate_basenames_both_survive(tmp_path):
 
 def test_report_never_contains_input_values(tmp_path):
     inputs, outputs = tmp_path / "in", tmp_path / "out"
-    write(inputs, "n.txt", "Patient [CANARY-REDACTED] phone 8599253525".encode())
+    write(inputs, "n.txt", "Patient Kaveri Nambiar phone 8599253525".encode())
     write_submission(inputs, outputs)
     blob = (outputs / "report.json").read_text(encoding="utf-8")
     assert "Kaveri" not in blob and "8599253525" not in blob

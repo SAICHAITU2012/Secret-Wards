@@ -156,11 +156,11 @@ Current coverage is a single rule for name + lowercase kinship suffix (`Kamal bh
 Untested by it: lowercase-initial names, role words (`attendant`, `compounder`, `didi`), and names
 inside parentheses.
 
-### 3.5 The last canary — `[CANARY-REDACTED]` (VERIFIED, and the most important finding of this audit)
+### 3.5 The last canary — `Zorawar Qadri` (VERIFIED, and the most important finding of this audit)
 
 ```
 VISITOR LOG
-18:40 - [CANARY-REDACTED] (attendant, bed 12), mob [PHONE-REDACTED]
+18:40 - Zorawar Qadri (attendant, bed 12), mob [PHONE-REDACTED]
 19:10 - Dr. Ramesh Srivastava took evening round.
 ```
 

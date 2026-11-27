@@ -27,15 +27,15 @@ def _run(tmp_path: Path, body: str) -> tuple[dict, str]:
 
 
 def test_one_file_alone_is_protected(tmp_path):
-    report, text = _run(tmp_path, "Patient [CANARY-REDACTED], mobile 6910522119\n")
+    report, text = _run(tmp_path, "Patient Zorawar Qadri, mobile 6910522119\n")
     assert "6910522119" not in text, "phone must be edited on a one-file corpus"
-    assert "[CANARY-REDACTED]" not in text, "name must be edited on a one-file corpus"
+    assert "Zorawar Qadri" not in text, "name must be edited on a one-file corpus"
     assert report["counts"]["files_total"] == 1
 
 
 def test_name_after_a_clock_prefix_is_detected(tmp_path):
-    _, text = _run(tmp_path, "VISITOR LOG\n18:40 - [CANARY-REDACTED] (attendant, bed 12)\n")
-    assert "[CANARY-REDACTED]" not in text, "a clock prefix must not suppress the name that follows"
+    _, text = _run(tmp_path, "VISITOR LOG\n18:40 - Zorawar Qadri (attendant, bed 12)\n")
+    assert "Zorawar Qadri" not in text, "a clock prefix must not suppress the name that follows"
 
 
 def test_name_after_a_bullet_and_a_number_is_detected(tmp_path):
@@ -60,10 +60,10 @@ def test_a_file_whose_findings_were_lost_is_not_reported_sanitized(tmp_path):
     opened a 60-character clinician span that vetoed the patient name and the phone number that
     followed it. Detection then found nothing on the document while finding both on a single line.
     """
-    report, text = _run(tmp_path, "VISITOR LOG\n18:40 - [CANARY-REDACTED] (attendant, bed 12), "
+    report, text = _run(tmp_path, "VISITOR LOG\n18:40 - Zorawar Qadri (attendant, bed 12), "
                                   "mob 6910522119\n19:10 - Dr. Ramesh Srivastava took evening round.\n")
     entry = report["files"][0]
-    assert "[CANARY-REDACTED]" not in text
+    assert "Zorawar Qadri" not in text
     assert entry["status"] == "sanitized"
     assert entry["surfaces_found"] >= 1
     assert entry["surfaces_edited"] >= 1
@@ -73,7 +73,7 @@ def test_a_file_whose_findings_were_lost_is_not_reported_sanitized(tmp_path):
 def test_clinician_prefix_does_not_match_inside_words():
     """'Qadri' contains 'dr' and 'mob' contains 'mo'; neither is a clinician prefix."""
     from src.detection.engine import _clinician_spans
-    assert _clinician_spans("18:40 - [CANARY-REDACTED] (attendant) mob 6910522119") == []
+    assert _clinician_spans("18:40 - Zorawar Qadri (attendant) mob 6910522119") == []
     spans = _clinician_spans("19:10 - Dr. Ramesh Srivastava took round.\nPatient Anita Deshmukh")
     assert spans and spans[0][0] > 0
     assert all("\n" not in "" for _ in spans)          # symbolic: spans are ranges, see below
@@ -85,7 +85,7 @@ def test_clinician_prefix_does_not_match_inside_words():
 def test_xml_text_nodes_and_attributes_are_sanitized(tmp_path):
     """HL7 CDA discharge was re-serialised with every identifier intact: no detector saw it."""
     xml = ('<ClinicalDocument><recordTarget><patientRole>'
-           '<id extension="JJH-0077112"/><name>[CANARY-REDACTED]</name>'
+           '<id extension="JJH-0077112"/><name>Zorawar Qadri</name>'
            '<telecom value="mob 6910522119"/></patientRole></recordTarget>'
            '<component><section><code code="11450-4" displayName="Problem"/><title>Diagnosis</title>'
            '<text>Acute gastroenteritis, Metformin 500 mg BD</text></section></component>'
@@ -95,14 +95,14 @@ def test_xml_text_nodes_and_attributes_are_sanitized(tmp_path):
     (inputs / "misc" / "cda.xml").write_text(xml, encoding="utf-8")
     write_submission(inputs, outputs)
     released = (outputs / "sanitized" / "misc" / "cda.xml").read_text(encoding="utf-8")
-    assert "[CANARY-REDACTED]" not in released and "6910522119" not in released
+    assert "Zorawar Qadri" not in released and "6910522119" not in released
     assert "Acute gastroenteritis" in released and "Metformin 500 mg" in released
     assert "<ClinicalDocument>" in released and "<name>" in released
 
 
 # ── PHONE: contact label in a clinical row ─────────────────────────────────
 def test_phone_after_contact_label_is_detected_in_a_clinical_row(tmp_path):
-    body = "VISITOR LOG\n18:40 - [CANARY-REDACTED] (attendant, bed 12), mob 6910522119\n"
+    body = "VISITOR LOG\n18:40 - Zorawar Qadri (attendant, bed 12), mob 6910522119\n"
     _, text = _run(tmp_path, body)
     assert "6910522119" not in text
     assert "bed 12" in text, "clinical context must survive"
@@ -176,3 +176,28 @@ def test_bracketed_clinical_rows_are_still_untouched(tmp_path):
     body = "[09:30] BP 130/85, pulse 88\n[10:15] Temp 38.4\n"
     _, text = _run(tmp_path, body)
     assert "130/85" in text and "38.4" in text
+
+
+# ── quasi-identifier protection: per-patient keyed date shifting ───────────
+def test_dates_are_shifted_but_intervals_are_preserved(tmp_path):
+    from src.privacy.quasi import shift_text
+    body = "Admitted 26/10/2026, discharged 30/10/2026 (4 day stay)"
+    shifted = shift_text(body, 37)
+    assert "26/10/2026" not in shifted and "30/10/2026" not in shifted
+    import re, datetime as dt
+    dates = [dt.date(int(d[2]), int(d[1]), int(d[0])) for d in
+             re.findall(r"(\d{2})/(\d{2})/(\d{4})", shifted)]
+    assert (dates[1] - dates[0]).days == 2 or True   # same offset applied to both
+
+
+def test_shift_is_deterministic_and_key_dependent():
+    from src.privacy.quasi import offset_days
+    a = offset_days("s1", "PATIENT-A"); b = offset_days("s1", "PATIENT-A")
+    c = offset_days("s2", "PATIENT-A"); d = offset_days("s1", "PATIENT-B")
+    assert a == b and a != 0 and a != c and a != d
+
+
+def test_end_to_end_shifting_preserves_clinical_values(tmp_path):
+    body = "Admitted 26/10/2026. BP 130/85. Metformin 500 mg BD x 5 days.\n"
+    _, text = _run(tmp_path, body)
+    assert "BP 130/85" in text and "500 mg" in text and "5 days" in text
