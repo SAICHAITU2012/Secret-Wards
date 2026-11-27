@@ -1,0 +1,28 @@
+# Encoding and multilingual normalization
+charset-normalizer
+indic-transliteration
+
+# Phone and country metadata; dates use Python's standard library
+phonenumbers
+pycountry
+
+# Record comparison
+rapidfuzz
+jellyfish
+
+# Validation and format support (fhir.resources 7+ uses Pydantic 2)
+pydantic>=2,<3
+fhir.resources>=7,<9
+jsonschema
+
+# Scanned documents: PDF text layers, image metadata, OCR (all optional at run time)
+pypdf
+pillow
+pytesseract
+
+# Encryption and policy configuration
+cryptography
+PyYAML
+
+# Classical ML and privacy-risk metrics are intentionally deferred until justified
+# by measured requirements. No pretrained model is installed or downloaded.
