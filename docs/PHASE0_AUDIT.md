@@ -160,7 +160,7 @@ inside parentheses.
 
 ```
 VISITOR LOG
-18:40 - [CANARY-REDACTED] (attendant, bed 12), mob 6910522119
+18:40 - [CANARY-REDACTED] (attendant, bed 12), mob [PHONE-REDACTED]
 19:10 - Dr. Ramesh Srivastava took evening round.
 ```
 
