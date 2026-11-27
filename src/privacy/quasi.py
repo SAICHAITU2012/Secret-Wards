@@ -101,3 +101,121 @@ def shift_ir(ir, offset: int) -> int:
     else:
         walk(data)
     return count
+
+
+# ── age banding and place generalisation ───────────────────────────────────
+_AGE_KEY = re.compile(r"^(?:age|age_?years?|patient_?age|वय)$", re.IGNORECASE)
+_AGE_SEX = re.compile(r"^(\d{1,3})\s*/\s*([MFmf])$")
+_VILLAGE_KEY = re.compile(r"(?:village|gram|mohalla|locality|town)", re.IGNORECASE)
+_DISTRICT_KEY = re.compile(r"(?:district|distt|dist\.)", re.IGNORECASE)
+
+
+def band_age(age: int) -> str:
+    """5-year band whose floor is <= the true age, so the truth always falls inside its band."""
+    low = (max(0, min(age, 120)) // 5) * 5
+    return f"{low}-{low + 4}"
+
+
+def band_ages(ir) -> int:
+    """Band integer ages (and 'age/sex' pairs) in structured records only."""
+    changed = 0
+
+    def walk(node, hint="", depth=0):
+        nonlocal changed
+        if depth > 24:
+            return
+        if isinstance(node, dict):
+            for key, value in list(node.items()):
+                key = str(key)
+                if _AGE_KEY.match(key.strip()) and isinstance(value, int) and 0 <= value <= 120:
+                    node[key] = band_age(value)
+                    changed += 1
+                elif _AGE_KEY.match(key.strip()) and isinstance(value, str):
+                    match = _AGE_SEX.match(value.strip())
+                    if match:
+                        node[key] = f"{band_age(int(match.group(1)))}/{match.group(2)}"
+                        changed += 1
+                    elif value.strip().isdigit() and len(value.strip()) <= 3:
+                        node[key] = band_age(int(value.strip()))
+                        changed += 1
+                else:
+                    if isinstance(value, str):
+                        match = _AGE_SEX.match(value.strip())
+                        if match and "age" in key.lower():
+                            node[key] = f"{band_age(int(match.group(1)))}/{match.group(2)}"
+                            changed += 1
+                    else:
+                        walk(value, key, depth + 1)
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                if isinstance(value, str):
+                    match = _AGE_SEX.match(value.strip())
+                    if match:
+                        node[index] = f"{band_age(int(match.group(1)))}/{match.group(2)}"
+                        changed += 1
+                else:
+                    walk(value, hint, depth + 1)
+
+    data = getattr(getattr(ir, "structure", None), "data", None)
+    walk(data)
+    return changed
+
+
+def build_place_map(root) -> dict[str, str]:
+    """village -> district, harvested from the corpus's own registration files (no hardcoding)."""
+    import csv
+    from pathlib import Path
+
+    mapping: dict[str, str] = {}
+    for path in sorted(Path(root).rglob("*.csv")):
+        try:
+            rows = list(csv.reader(open(path, encoding="utf-8", errors="ignore")))
+        except OSError:
+            continue
+        if not rows:
+            continue
+        header = [h.strip() for h in rows[0]]
+        village = next((i for i, h in enumerate(header) if _VILLAGE_KEY.search(h)), None)
+        district = next((i for i, h in enumerate(header) if _DISTRICT_KEY.search(h)), None)
+        if village is None or district is None:
+            continue
+        for row in rows[1:]:
+            if max(village, district) < len(row):
+                name, place = row[village].strip(), row[district].strip()
+                if name and place and len(name) > 2:
+                    mapping.setdefault(name.lower(), place)
+    return mapping
+
+
+def generalise_places(ir, mapping: dict[str, str]) -> int:
+    """Replace a village with its district; leave anything not in the mapping alone."""
+    if not mapping:
+        return 0
+    changed = 0
+
+    def walk(node, hint="", depth=0):
+        nonlocal changed
+        if depth > 24:
+            return
+        if isinstance(node, dict):
+            for key, value in list(node.items()):
+                key = str(key)
+                if isinstance(value, str):
+                    replacement = mapping.get(value.strip().lower())
+                    if replacement and (_VILLAGE_KEY.search(key) or len(value.split()) <= 3):
+                        node[key] = replacement
+                        changed += 1
+                else:
+                    walk(value, key, depth + 1)
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                if isinstance(value, str):
+                    replacement = mapping.get(value.strip().lower())
+                    if replacement:
+                        node[index] = replacement
+                        changed += 1
+                else:
+                    walk(value, hint, depth + 1)
+
+    walk(getattr(getattr(ir, "structure", None), "data", None))
+    return changed

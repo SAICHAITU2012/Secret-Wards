@@ -23,7 +23,7 @@ from src.detection.structural import sanitise_structure
 from src.detection.protection import ProtectionIndex
 from src.ingestion.scanned import scan_path
 from src.policy import engine as policy_engine
-from src.privacy.quasi import offset_days, shift_ir
+from src.privacy.quasi import band_ages, build_place_map, generalise_places, offset_days, shift_ir
 from src.privacy.pseudonyms import (identity_evidence, pseudonym_for,
                                     pseudonym_for_locator, secret_from_environment)
 from src.security.capabilities import report_section
@@ -107,6 +107,8 @@ def write_submission(input_root: str | Path, output_root: str | Path, *,
     # The clinical lexicon is derived from whatever reference files this input ships, so a
     # different hospital with different drugs is handled without touching code.
     protection = ProtectionIndex.from_input_tree(input_root)
+    # village -> district, harvested from this corpus's own registration files.
+    place_map = build_place_map(input_root)
     tokens = policy_engine.resolve_tokens(policy)
 
     submission_secret = secret_from_environment()
@@ -180,6 +182,8 @@ def write_submission(input_root: str | Path, output_root: str | Path, *,
             # Dates are shifted per record, keyed by secret + identity, so every interval in the
             # record moves together and a global-offset recovery reveals nothing about other patients.
             shift_ir(ir, offset_days(submission_secret, evidence or digest))
+            band_ages(ir)
+            generalise_places(ir, place_map)
             payload = _serialize(ir)
             # Release integrity: parsing success is not sanitisation success. If detection found
             # spans and the bytes did not change, the findings were lost downstream — refuse to
